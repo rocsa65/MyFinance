@@ -1,5 +1,3 @@
-using System.IO;
-using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using MyFinance.Core.Interfaces;
 using MyFinance.Core.Services;
@@ -12,38 +10,66 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 
+// --- register DbContext first ---
+builder.Services.AddDbContext<FinanceDbContext>(options =>
+{
+    // In non-testing environment read connection string from config
+    if (builder.Environment.IsEnvironment("Testing"))
+    {
+        var testFile = builder.Configuration["TestingSqlite:FilePath"]
+                       ?? Environment.GetEnvironmentVariable("TEST_SQLITE_FILE")
+                       ?? Path.Combine(Path.GetTempPath(), "MyFinance.Testing.db");
+        options.UseSqlite($"Data Source={testFile}");
+    }
+    else
+    {
+        options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
+    }
+});
+
+// Add health checks AFTER DbContext registration
+builder.Services.AddHealthChecks()
+    .AddCheck<DbContextHealthCheck<FinanceDbContext>>("FinanceDbContext");
+
 // Add services to the container.
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddSwaggerGen();
 
-// Conditional DB registration for tests or normal runs
-if (builder.Environment.IsEnvironment("Testing"))
+// Add CORS services
+builder.Services.AddCors(options =>
 {
-    // Prefer explicit file path from config or env var so tests can control it
-    var testFile = builder.Configuration["TestingSqlite:FilePath"]
-                   ?? Environment.GetEnvironmentVariable("TEST_SQLITE_FILE")
-                   ?? Path.Combine(Path.GetTempPath(), "MyFinance.Testing.db");
-
-    var connectionString = $"Data Source={testFile}";
-    builder.Services.AddDbContext<FinanceDbContext>(options =>
+    options.AddPolicy("AllowReactApp", policy =>
     {
-        options.UseSqlite(connectionString);
+        policy.WithOrigins("http://localhost:3000")
+              .AllowAnyHeader()
+              .AllowAnyMethod();
     });
-}
-else
-{
-    // Normal registration (dev/prod)
-    builder.Services.AddDbContext<FinanceDbContext>(options =>
-    {
-        options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
-    });
-}
+});
 
 // Register repositories and services for DI
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
 builder.Services.AddScoped<IAccountService, AccountService>();
 
 var app = builder.Build();
+
+// Ensure database is created and migrated
+using (var scope = app.Services.CreateScope())
+{
+    var context = scope.ServiceProvider.GetRequiredService<FinanceDbContext>();
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    
+    try
+    {
+        logger.LogInformation("Starting database migration...");
+        context.Database.Migrate();
+        logger.LogInformation("Database migration completed successfully.");        
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "An error occurred while migrating or seeding the database.");
+        throw;
+    }
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -52,6 +78,12 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// Use CORS
+app.UseCors("AllowReactApp");
+
+// Map health checks
+app.MapHealthChecks("/health");
 
 // Map controllers so attribute routes like "api/account" are exposed
 app.MapControllers();
