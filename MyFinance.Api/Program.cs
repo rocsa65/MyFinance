@@ -1,3 +1,5 @@
+using System.IO;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using MyFinance.Core.Interfaces;
 using MyFinance.Core.Services;
@@ -14,8 +16,28 @@ builder.Services.AddControllers();
 // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
 builder.Services.AddSwaggerGen();
 
-builder.Services.AddDbContext<FinanceDbContext>(options =>
-    options.UseSqlite("Data Source=finance.db"));
+// Conditional DB registration for tests or normal runs
+if (builder.Environment.IsEnvironment("Testing"))
+{
+    // Prefer explicit file path from config or env var so tests can control it
+    var testFile = builder.Configuration["TestingSqlite:FilePath"]
+                   ?? Environment.GetEnvironmentVariable("TEST_SQLITE_FILE")
+                   ?? Path.Combine(Path.GetTempPath(), "MyFinance.Testing.db");
+
+    var connectionString = $"Data Source={testFile}";
+    builder.Services.AddDbContext<FinanceDbContext>(options =>
+    {
+        options.UseSqlite(connectionString);
+    });
+}
+else
+{
+    // Normal registration (dev/prod)
+    builder.Services.AddDbContext<FinanceDbContext>(options =>
+    {
+        options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
+    });
+}
 
 // Register repositories and services for DI
 builder.Services.AddScoped<IAccountRepository, AccountRepository>();
@@ -31,4 +53,10 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Map controllers so attribute routes like "api/account" are exposed
+app.MapControllers();
+
 app.Run();
+
+// Make the implicit Program class accessible to integration tests
+public partial class Program { }
