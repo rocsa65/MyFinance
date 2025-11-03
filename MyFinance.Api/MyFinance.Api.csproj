@@ -24,4 +24,8 @@
     <ProjectReference Include="..\MyFinance.Infrastructure\MyFinance.Infrastructure.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="HealthCheck\" />
+  </ItemGroup>
+
 </Project>
