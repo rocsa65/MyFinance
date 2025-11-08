@@ -18,38 +18,48 @@ env:
   SOLUTION_PATH: './MyFinance.sln'
 
 jobs:
+  # ====================================
+  # STAGE 1: Test & Quality Checks
+  # ====================================
   test:
+    name: "Test & Quality Checks"
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    # --- Setup Stage ---
+    - name: 📥 Checkout code
       uses: actions/checkout@v4
 
-    - name: Setup .NET
+    - name: ⚙️ Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: ${{ env.DOTNET_VERSION }}
 
-    - name: Restore dependencies
+    - name: 📦 Restore dependencies
       run: dotnet restore ${{ env.SOLUTION_PATH }}
 
-    - name: Build solution
+    # --- Build Stage ---
+    - name: 🔨 Build solution
       run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
 
-    - name: Run unit tests
+    # --- Test Stage ---
+    - name: 🧪 Run unit tests
       run: dotnet test MyFinance.UnitTests/MyFinance.UnitTests.csproj --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
 
-    - name: Run integration tests
+    - name: 🔗 Run integration tests
       run: dotnet test MyFinance.IntegrationTests/MyFinance.IntegrationTests.csproj --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
 
-    - name: Run security audit
+    # --- Security Stage ---
+    - name: 🔒 Run security audit
       run: |
         dotnet list package --vulnerable --include-transitive || echo "Vulnerability check completed"
 
-    - name: Build application (verification)
+    # --- Build Verification Stage ---
+    - name: 📦 Build application (verification)
       run: dotnet publish MyFinance.Api/MyFinance.Api.csproj --configuration Release --output ./publish
 
-    - name: Upload test results
+    # --- Artifact Stage ---
+    - name: 📤 Upload test results
       uses: actions/upload-artifact@v4
       if: always()
       with:
@@ -57,14 +67,17 @@ jobs:
         path: coverage/
         retention-days: 30
 
-  # Comment on PR with test status
+  # ====================================
+  # STAGE 2: PR Feedback
+  # ====================================
   pr-feedback:
+    name: "PR Feedback"
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'pull_request'
 
     steps:
-    - name: Comment on PR
+    - name: 💬 Comment on PR
       uses: actions/github-script@v7
       with:
         script: |
@@ -90,27 +103,32 @@ jobs:
             body: comment
           });
 
-  # Build and publish Docker image (only on merge to production)
+  # ====================================
+  # STAGE 3: Docker Build & Publish
+  # ====================================
   build-and-publish:
+    name: "Docker Build & Publish to GHCR"
     runs-on: ubuntu-latest
     needs: test
     if: github.event_name == 'push' && github.ref == 'refs/heads/production'
 
     steps:
-    - name: Checkout code
+    # --- Setup Stage ---
+    - name: 📥 Checkout code
       uses: actions/checkout@v4
 
-    - name: Set up Docker Buildx
+    - name: 🐳 Set up Docker Buildx
       uses: docker/setup-buildx-action@v3
 
-    - name: Login to GitHub Container Registry
+    - name: 🔐 Login to GitHub Container Registry
       uses: docker/login-action@v3
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Generate release tags
+    # --- Tag Generation Stage ---
+    - name: 🏷️ Generate release tags
       id: meta
       run: |
         # Generate release number (could be from git tag, build number, etc.)
@@ -129,7 +147,8 @@ jobs:
         echo "  - Commit: ${SHORT_SHA}"
         echo "  - Timestamp: prod-${TIMESTAMP}"
 
-    - name: Build and push Docker image
+    # --- Build & Push Stage ---
+    - name: 🔨 Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: .
@@ -147,7 +166,8 @@ jobs:
           org.opencontainers.image.description=MyFinance Server - Production Build
           org.opencontainers.image.revision=${{ github.sha }}
 
-    - name: Make package public
+    # --- Post-Publish Stage ---
+    - name: 🌐 Make package public
       run: |
         echo "Attempting to make package public..."
         sleep 5
@@ -157,7 +177,7 @@ jobs:
           https://api.github.com/user/packages/container/myfinance%2Fserver \
           -d '{"visibility":"public"}' || echo "Package visibility setting skipped"
 
-    - name: Image publication summary
+    - name: 📋 Image publication summary
       run: |
         echo "## 🚀 Docker Image Published Successfully" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
