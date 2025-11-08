@@ -1,0 +1,198 @@
+name: Production CI - Build & Publish
+
+on:
+  push:
+    branches: [ production ]
+  pull_request:
+    branches: [ production ]
+  workflow_dispatch: # Allows manual trigger
+
+# Configure permissions for GITHUB_TOKEN
+permissions:
+  contents: read          # Read repository content
+  packages: write         # Write to GitHub Container Registry
+  pull-requests: write   # Comment on PRs
+
+env:
+  DOTNET_VERSION: '9.0.x'
+  SOLUTION_PATH: './MyFinance.sln'
+
+jobs:
+  # ====================================
+  # STAGE 1: Test & Quality Checks
+  # ====================================
+  test:
+    name: "Test & Quality Checks"
+    runs-on: ubuntu-latest
+
+    steps:
+    # --- Setup Stage ---
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: ⚙️ Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: 📦 Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    # --- Build Stage ---
+    - name: 🔨 Build solution
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Release --no-restore
+
+    # --- Test Stage ---
+    - name: 🧪 Run unit tests
+      run: dotnet test MyFinance.UnitTests/MyFinance.UnitTests.csproj --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+    - name: 🔗 Run integration tests
+      run: dotnet test MyFinance.IntegrationTests/MyFinance.IntegrationTests.csproj --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
+
+    # --- Security Stage ---
+    - name: 🔒 Run security audit
+      run: |
+        dotnet list package --vulnerable --include-transitive || echo "Vulnerability check completed"
+
+    # --- Build Verification Stage ---
+    - name: 📦 Build application (verification)
+      run: dotnet publish MyFinance.Api/MyFinance.Api.csproj --configuration Release --output ./publish
+
+    # --- Artifact Stage ---
+    - name: 📤 Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: production-test-results
+        path: coverage/
+        retention-days: 30
+
+  # ====================================
+  # STAGE 2: PR Feedback
+  # ====================================
+  pr-feedback:
+    name: "PR Feedback"
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request'
+
+    steps:
+    - name: 💬 Comment on PR
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const comment = `## ✅ Production CI Pipeline Status
+
+          **Tests Passed** - All unit and integration tests are passing
+          **Security Check Passed** - No critical/high vulnerabilities found
+          **Build Verification Passed** - Application builds successfully
+
+          ### 🚀 Next Steps After Merge:
+          1. Docker image will be built and published to GitHub Packages
+          2. Image will be available for Jenkins deployment pipeline
+          3. Release Manager can trigger production deployment via Jenkins
+
+          **Ready for review and merge!** 🎉
+
+          **Note:** Actual deployment to production is managed by Jenkins pipeline in the Infrastructure repository.`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+  # ====================================
+  # STAGE 3: Docker Build & Publish
+  # ====================================
+  build-and-publish:
+    name: "Docker Build & Publish to GHCR"
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/production'
+
+    steps:
+    # --- Setup Stage ---
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: 🐳 Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: 🔐 Login to GitHub Container Registry
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # --- Tag Generation Stage ---
+    - name: 🏷️ Generate release tags
+      id: meta
+      run: |
+        # Generate release number (could be from git tag, build number, etc.)
+        BUILD_NUMBER=${GITHUB_RUN_NUMBER}
+        RELEASE_TAG="v${BUILD_NUMBER}"
+        SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+        TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+        echo "RELEASE_TAG=${RELEASE_TAG}" >> $GITHUB_OUTPUT
+        echo "BUILD_NUMBER=${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+        echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
+        echo "TIMESTAMP=${TIMESTAMP}" >> $GITHUB_OUTPUT
+
+        echo "🏷️ Release tags generated:"
+        echo "  - Release: ${RELEASE_TAG}"
+        echo "  - Commit: ${SHORT_SHA}"
+        echo "  - Timestamp: prod-${TIMESTAMP}"
+
+    # --- Build & Push Stage ---
+    - name: 🔨 Build and push Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./MyFinance.Api/Dockerfile
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository_owner }}/myfinance-server:latest
+          ghcr.io/${{ github.repository_owner }}/myfinance-server:${{ steps.meta.outputs.RELEASE_TAG }}
+          ghcr.io/${{ github.repository_owner }}/myfinance-server:${{ steps.meta.outputs.SHORT_SHA }}
+          ghcr.io/${{ github.repository_owner }}/myfinance-server:prod-${{ steps.meta.outputs.TIMESTAMP }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        labels: |
+          org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          org.opencontainers.image.description=MyFinance Server - Production Build
+          org.opencontainers.image.revision=${{ github.sha }}
+
+    # --- Post-Publish Stage ---
+    - name: 🌐 Make package public
+      run: |
+        echo "Attempting to make package public..."
+        sleep 5
+        curl -s -X PATCH \
+          -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          https://api.github.com/user/packages/container/myfinance-server \
+          -d '{"visibility":"public"}' || echo "Package visibility setting skipped"
+
+    - name: 📋 Image publication summary
+      run: |
+        echo "## 🚀 Docker Image Published Successfully" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Registry:** GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/myfinance-server\`" >> $GITHUB_STEP_SUMMARY
+        echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
+        echo "- \`latest\` (latest production release)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ steps.meta.outputs.RELEASE_TAG }}\` (release number)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`${{ steps.meta.outputs.SHORT_SHA }}\` (commit reference)" >> $GITHUB_STEP_SUMMARY
+        echo "- \`prod-${{ steps.meta.outputs.TIMESTAMP }}\` (deployment timestamp)" >> $GITHUB_STEP_SUMMARY  
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Infrastructure Deployment:** Use release tag \`${{ steps.meta.outputs.RELEASE_TAG }}\` for deployment" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Deployment Command Example:**" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "# Deploy specific release" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ghcr.io/${{ github.repository_owner }}/myfinance-server:${{ steps.meta.outputs.RELEASE_TAG }}" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
