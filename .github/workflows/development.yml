@@ -134,7 +134,7 @@ jobs:
         script: |
           const comment = `## ✅ Development CI Pipeline Status
 
-          **Tests Passed** - All unit and integration tests are passing
+          **Tests Passed** - All unit tests are passing
           **Build Verification Passed** - Application builds successfully
           **Security Check Passed** - No critical vulnerabilities found
 
@@ -143,7 +143,7 @@ jobs:
 
           **Next Steps:**
           1. Code Review → Request review from team
-          2. Merge to development → Continue integration testing`;
+          2. Merge to development branch`;
 
           github.rest.issues.createComment({
             issue_number: context.issue.number,
