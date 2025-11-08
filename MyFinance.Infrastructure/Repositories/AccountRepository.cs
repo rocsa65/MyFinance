@@ -25,5 +25,18 @@ namespace MyFinance.Infrastructure.Repositories
         {
             return _context.Accounts.ToList();
         }
+
+        public bool Delete(int id)
+        {
+            var account = _context.Accounts.Find(id);
+            if (account == null)
+            {
+                return false;
+            }
+
+            _context.Accounts.Remove(account);
+            _context.SaveChanges();
+            return true;
+        }
     }
 }

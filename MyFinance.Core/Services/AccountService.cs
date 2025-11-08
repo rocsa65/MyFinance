@@ -61,5 +61,10 @@ namespace MyFinance.Core.Services
                 };
             }
         }
+
+        public bool Delete(int id)
+        {
+            return _accountRepository.Delete(id);
+        }
     }
 }

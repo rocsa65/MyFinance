@@ -29,5 +29,17 @@ namespace MyFinance.Api.Controllers
             var account = _accountService.Create(dto.Name, dto.Identifier, dto.Currency, dto.Balance);
             return CreatedAtAction(nameof(GetAll), new { id = account.Id }, account);
         }
+
+        [HttpDelete("{id}")]
+        public IActionResult Delete(int id)
+        {
+            var deleted = _accountService.Delete(id);
+            if (!deleted)
+            {
+                return NotFound();
+            }
+
+            return NoContent();
+        }
     }
 }

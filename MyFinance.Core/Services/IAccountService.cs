@@ -8,5 +8,8 @@ namespace MyFinance.Core.Services
         IEnumerable<AccountDto> GetAll();
 
         AccountDto Create(string name, string? identifier, Currency currency, decimal balance);
+
+        // Deletes account by id. Returns true if deletion succeeded (found and removed).
+        bool Delete(int id);
     }
 }
