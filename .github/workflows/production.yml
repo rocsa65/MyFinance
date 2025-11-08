@@ -176,15 +176,17 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-    - name: 💬 Comment on PR
+    - name: 💬 Update PR with status
       uses: actions/github-script@v7
       with:
         script: |
-          const comment = `## ✅ Production CI Pipeline Status
+          const commentBody = `## ✅ Production CI Pipeline Status
 
-          **Tests Passed** - All unit and integration tests are passing
-          **Security Check Passed** - No critical/high vulnerabilities found
-          **Build Verification Passed** - Application builds successfully
+          **Build Status** - ✅ Passed
+          **Unit Tests** - ✅ All tests passing
+          **Integration Tests** - ✅ All tests passing
+          **Build Verification** - ✅ Application builds successfully
+          **Security Check** - ✅ No critical/high vulnerabilities found
 
           ### 🚀 Next Steps After Merge:
           1. Docker image will be built and published to GitHub Packages
@@ -193,14 +195,40 @@ jobs:
 
           **Ready for review and merge!** 🎉
 
-          **Note:** Actual deployment to production is managed by Jenkins pipeline in the Infrastructure repository.`;
+          **Note:** Actual deployment to production is managed by Jenkins pipeline in the Infrastructure repository.
+          
+          ---
+          *Last updated: ${new Date().toUTCString()}*
+          *Commit: ${context.sha.substring(0, 7)}*`;
 
-          github.rest.issues.createComment({
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: comment
           });
+
+          const botComment = comments.find(comment => 
+            comment.user.type === 'Bot' && 
+            comment.body.includes('Production CI Pipeline Status')
+          );
+
+          // Update existing comment or create new one
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              comment_id: botComment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+          } else {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+          }
 
   # ====================================
   # STAGE 6: Docker Build & Publish

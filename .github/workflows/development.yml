@@ -128,26 +128,53 @@ jobs:
     if: github.event_name == 'pull_request'
 
     steps:
-    - name: 💬 Comment on PR
+    - name: 💬 Update PR with status
       uses: actions/github-script@v7
       with:
         script: |
-          const comment = `## ✅ Development CI Pipeline Status
+          const commentBody = `## ✅ Development CI Pipeline Status
 
-          **Tests Passed** - All unit tests are passing
-          **Build Verification Passed** - Application builds successfully
-          **Security Check Passed** - No critical vulnerabilities found
+          **Build Status** - ✅ Passed
+          **Unit Tests** - ✅ All tests passing
+          **Build Verification** - ✅ Application builds successfully
+          **Security Check** - ✅ No critical vulnerabilities found
 
           ### 🚀 Ready for Review
           This PR has passed all automated checks and is ready for code review.
 
           **Next Steps:**
           1. Code Review → Request review from team
-          2. Merge to development branch`;
+          2. Merge to development branch
+          
+          ---
+          *Last updated: ${new Date().toUTCString()}*
+          *Commit: ${context.sha.substring(0, 7)}*`;
 
-          github.rest.issues.createComment({
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: comment
           });
+
+          const botComment = comments.find(comment => 
+            comment.user.type === 'Bot' && 
+            comment.body.includes('Development CI Pipeline Status')
+          );
+
+          // Update existing comment or create new one
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              comment_id: botComment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+          } else {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+          }
