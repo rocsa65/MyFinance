@@ -8,5 +8,7 @@ namespace MyFinance.Core.Interfaces
         IEnumerable<Account> GetAll();
 
         Account Add(Account account);
+
+        bool Delete(int id);
     }
 }

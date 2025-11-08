@@ -55,11 +55,18 @@ namespace MyFinance.Core.Services
 
                 yield return new AccountDto
                 {
+                    Id = account.Id,
                     Name = account.Name,
+                    Identifier = account.Identifier,
                     Currency = account.Currency,
                     Balance = balance
                 };
             }
+        }
+
+        public bool Delete(int id)
+        {
+            return _accountRepository.Delete(id);
         }
     }
 }

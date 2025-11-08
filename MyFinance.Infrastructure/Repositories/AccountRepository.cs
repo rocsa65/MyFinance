@@ -17,13 +17,26 @@ namespace MyFinance.Infrastructure.Repositories
         public Account Add(Account account)
         {
             _context.Accounts.Add(account);
-
+            _context.SaveChanges();
             return account;
         }
 
         public IEnumerable<Account> GetAll()
         {
             return _context.Accounts.ToList();
+        }
+
+        public bool Delete(int id)
+        {
+            var account = _context.Accounts.Find(id);
+            if (account == null)
+            {
+                return false;
+            }
+
+            _context.Accounts.Remove(account);
+            _context.SaveChanges();
+            return true;
         }
     }
 }
