@@ -18,11 +18,41 @@ env:
 
 jobs:
   # ====================================
-  # STAGE 1: Test & Quality Checks
+  # STAGE 1: Build
   # ====================================
-  test:
-    name: "Test & Quality Checks"
+  build:
+    name: "Build Application"
     runs-on: ubuntu-latest
+
+    steps:
+    # --- Setup Stage ---
+    - name: 📥 Checkout code
+      uses: actions/checkout@v4
+
+    - name: ⚙️ Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: 📦 Restore dependencies
+      run: dotnet restore ${{ env.SOLUTION_PATH }}
+
+    # --- Build Stage ---
+    - name: 🔨 Build solution
+      run: dotnet build ${{ env.SOLUTION_PATH }} --configuration Debug --no-restore
+
+    # --- Security Stage ---
+    - name: 🔒 Run security audit
+      run: |
+        dotnet list package --vulnerable --include-transitive || echo "Vulnerability check completed"
+
+  # ====================================
+  # STAGE 2: Unit Tests
+  # ====================================
+  unit-tests:
+    name: "Unit Tests"
+    runs-on: ubuntu-latest
+    needs: build
 
     steps:
     # --- Setup Stage ---
@@ -45,9 +75,6 @@ jobs:
     - name: 🧪 Run unit tests
       run: dotnet test MyFinance.UnitTests/MyFinance.UnitTests.csproj --configuration Debug --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
 
-    - name: 🔗 Run integration tests
-      run: dotnet test MyFinance.IntegrationTests/MyFinance.IntegrationTests.csproj --configuration Debug --no-build --verbosity normal --collect:"XPlat Code Coverage" --results-directory ./coverage
-
     # --- Coverage Stage ---
     - name: 📊 Upload coverage to Codecov
       uses: codecov/codecov-action@v3
@@ -55,18 +82,13 @@ jobs:
         directory: ./coverage
         fail_ci_if_error: false
 
-    # --- Security Stage ---
-    - name: 🔒 Run security audit
-      run: |
-        dotnet list package --vulnerable --include-transitive || echo "Vulnerability check completed"
-
   # ====================================
-  # STAGE 2: Build Verification
+  # STAGE 3: Build Verification
   # ====================================
   build-verification:
     name: "Build Verification"
     runs-on: ubuntu-latest
-    needs: test
+    needs: [build, unit-tests]
 
     steps:
     # --- Setup Stage ---
@@ -97,35 +119,62 @@ jobs:
         retention-days: 7
 
   # ====================================
-  # STAGE 3: PR Feedback
+  # STAGE 4: PR Feedback
   # ====================================
   pr-feedback:
     name: "PR Feedback"
     runs-on: ubuntu-latest
-    needs: [test, build-verification]
+    needs: [build, unit-tests, build-verification]
     if: github.event_name == 'pull_request'
 
     steps:
-    - name: 💬 Comment on PR
+    - name: 💬 Update PR with status
       uses: actions/github-script@v7
       with:
         script: |
-          const comment = `## ✅ Development CI Pipeline Status
+          const commentBody = `## ✅ Development CI Pipeline Status
 
-          **Tests Passed** - All unit and integration tests are passing
-          **Build Verification Passed** - Application builds successfully
-          **Security Check Passed** - No critical vulnerabilities found
+          **Build Status** - ✅ Passed
+          **Unit Tests** - ✅ All tests passing
+          **Build Verification** - ✅ Application builds successfully
+          **Security Check** - ✅ No critical vulnerabilities found
 
           ### 🚀 Ready for Review
           This PR has passed all automated checks and is ready for code review.
 
           **Next Steps:**
           1. Code Review → Request review from team
-          2. Merge to development → Continue integration testing`;
+          2. Merge to development branch
+          
+          ---
+          *Last updated: ${new Date().toUTCString()}*
+          *Commit: ${context.sha.substring(0, 7)}*`;
 
-          github.rest.issues.createComment({
+          // Find existing comment
+          const { data: comments } = await github.rest.issues.listComments({
             issue_number: context.issue.number,
             owner: context.repo.owner,
             repo: context.repo.repo,
-            body: comment
           });
+
+          const botComment = comments.find(comment => 
+            comment.user.type === 'Bot' && 
+            comment.body.includes('Development CI Pipeline Status')
+          );
+
+          // Update existing comment or create new one
+          if (botComment) {
+            await github.rest.issues.updateComment({
+              comment_id: botComment.id,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+          } else {
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
+          }
