@@ -13,6 +13,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite.Core" Version="9.0.9" />
+    <PackageReference Include="Moq" Version="4.20.72" />
     <PackageReference Include="SQLitePCLRaw.bundle_green" Version="2.1.11" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="9.0.5" />
   </ItemGroup>
@@ -21,6 +22,10 @@
     <ProjectReference Include="..\MyFinance.Common\MyFinance.Common.csproj" />
     <ProjectReference Include="..\MyFinance.Core\MyFinance.Core.csproj" />
     <ProjectReference Include="..\MyFinance.Infrastructure\MyFinance.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="HealthCheck\" />
   </ItemGroup>
 
 </Project>

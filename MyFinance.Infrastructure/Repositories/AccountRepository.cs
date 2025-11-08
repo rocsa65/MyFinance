@@ -17,7 +17,7 @@ namespace MyFinance.Infrastructure.Repositories
         public Account Add(Account account)
         {
             _context.Accounts.Add(account);
-
+            _context.SaveChanges();
             return account;
         }
 
