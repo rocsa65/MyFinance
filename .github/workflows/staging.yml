@@ -157,12 +157,30 @@ jobs:
         retention-days: 7
 
   # ====================================
-  # STAGE 5: Docker Build & Publish
+  # STAGE 5: Docker Publish Approval
+  # ====================================
+  docker-publish-approval:
+    name: "Docker Publish Approval"
+    runs-on: ubuntu-latest
+    needs: [build, unit-tests, integration-tests, build-verification]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    environment:
+      name: staging-docker-publish
+      url: https://github.com/${{ github.repository }}/pkgs/container/myfinance-server
+
+    steps:
+    - name: ✅ Approval checkpoint
+      run: |
+        echo "✅ Manual approval granted for Docker image publishing"
+        echo "Proceeding to build and publish staging Docker image..."
+
+  # ====================================
+  # STAGE 6: Docker Build & Publish
   # ====================================
   docker-build-and-publish:
     name: "Docker Build & Publish to GHCR"
     runs-on: ubuntu-latest
-    needs: [build, unit-tests, integration-tests, build-verification]
+    needs: docker-publish-approval
     if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
 
     steps:
@@ -213,20 +231,29 @@ jobs:
         echo "## 🧪 Staging Docker Image Published" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Registry:** GitHub Container Registry" >> $GITHUB_STEP_SUMMARY
-        echo "**Image:** \`ghcr.io/${{ github.repository_owner }}/myfinance-server\`" >> $GITHUB_STEP_SUMMARY
-        echo "**Tags:**" >> $GITHUB_STEP_SUMMARY
-        echo "- \`staging-latest\` (latest staging build)" >> $GITHUB_STEP_SUMMARY
-        echo "- \`staging-${{ github.sha }}\` (commit reference)" >> $GITHUB_STEP_SUMMARY
+        echo "**Image:** \`ghcr.io/${{ github.repository }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Published Tags:" >> $GITHUB_STEP_SUMMARY
+        echo "- [\`staging-latest\`](https://github.com/${{ github.repository }}/pkgs/container/myfinance-server) - Latest staging build" >> $GITHUB_STEP_SUMMARY
+        echo "- \`staging-${{ github.sha }}\` - Commit reference" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Quick Links:" >> $GITHUB_STEP_SUMMARY
+        echo "- [View on GitHub Packages](https://github.com/${{ github.repository }}/pkgs/container/myfinance-server)" >> $GITHUB_STEP_SUMMARY
+        echo "- [View commit ${{ github.sha }}](https://github.com/${{ github.repository }}/commit/${{ github.sha }})" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "**Purpose:** Pre-production testing and QA validation" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "**Deploy to Staging:**" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Deploy to Staging:" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-        echo "docker pull ghcr.io/${{ github.repository_owner }}/myfinance-server:staging-latest" >> $GITHUB_STEP_SUMMARY
+        echo "# Pull latest staging image" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ghcr.io/${{ github.repository }}:staging-latest" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# Or pull specific commit version" >> $GITHUB_STEP_SUMMARY
+        echo "docker pull ghcr.io/${{ github.repository }}:staging-${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
         echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
 
   # ====================================
-  # STAGE 6: PR Feedback
+  # STAGE 7: PR Feedback
   # ====================================
   pr-feedback:
     name: "PR Feedback"
