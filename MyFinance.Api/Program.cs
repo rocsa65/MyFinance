@@ -40,7 +40,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowReactApp", policy =>
     {
-        policy.WithOrigins("http://localhost:3000")
+        policy.WithOrigins("http://localhost:3000", "https://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod();
     });
@@ -61,6 +61,20 @@ using (var scope = app.Services.CreateScope())
     try
     {
         logger.LogInformation("Starting database migration...");
+
+        // If using SQLite, ensure the folder for the DB file exists before migrating.
+        var dbConnection = context.Database.GetDbConnection();
+        if (dbConnection is Microsoft.Data.Sqlite.SqliteConnection sqliteConn)
+        {
+            var dataSource = sqliteConn.DataSource; // file path or name
+            var dir = Path.GetDirectoryName(dataSource);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+            {
+                logger.LogInformation("Creating directory for SQLite database: {Dir}", dir);
+                Directory.CreateDirectory(dir);
+            }
+        }
+
         context.Database.Migrate();
         logger.LogInformation("Database migration completed successfully.");        
     }
@@ -77,7 +91,7 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// NOTE: HTTPS redirection removed for all environments.
 
 // Use CORS
 app.UseCors("AllowReactApp");
