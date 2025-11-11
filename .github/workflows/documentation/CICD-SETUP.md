@@ -1,10 +1,12 @@
 # GitHub Actions CI/CD Pipeline Setup
 
-This repository uses GitHub Actions for Continuous Integration and Continuous Deployment (CI/CD) across three environments:
+This repository uses GitHub Actions for Continuous Integration (CI) across three environments:
 
 - **Development**: Fast feedback on feature development  
 - **Staging**: Comprehensive testing with manual Docker publish approval
-- **Production**: Full production deployments with manual Docker publish approval
+- **Production**: Full testing with manual Docker publish approval
+
+> **Note**: These pipelines focus on **build**, **test**, and **optional Docker image publishing** (for backup purposes). Actual deployments are handled by the **MyFinance-Infrastructure** repository pipeline.
 
 ## 🚀 Pipeline Overview
 
@@ -20,7 +22,7 @@ This repository uses GitHub Actions for Continuous Integration and Continuous De
 3. **✅ Build Verification** - Final build verification with artifacts (7-day retention)
 4. **💬 PR Feedback** - Updates PR with comprehensive status
 
-**Focus**: Fast feedback for developers, no Docker builds
+**Focus**: Fast feedback for developers, no Docker builds or deployments
 
 ---
 
@@ -36,12 +38,12 @@ This repository uses GitHub Actions for Continuous Integration and Continuous De
 3. **🔗 Integration Tests** - Runs integration tests with coverage
 4. **✅ Build Verification** - Final build verification with artifacts (7-day retention)
 5. **⏸️ Docker Publish Approval** - **Manual approval gate** (only on merge)
-6. **🐳 Docker Build & Publish** - Builds and publishes to GHCR (only after approval)
+6. **🐳 Docker Build & Publish** - Builds and publishes to GHCR for backup purposes (only after approval)
 7. **💬 PR Feedback** - Updates PR with comprehensive status
 
 **Docker Tags**: `staging-latest`, `staging-{commit-sha}`
 
-**Focus**: Quality assurance with controlled Docker publishing
+**Focus**: Quality assurance with controlled Docker image publishing for backup purposes
 
 ---
 
@@ -57,13 +59,15 @@ This repository uses GitHub Actions for Continuous Integration and Continuous De
 2. **🧪 Unit Tests** - Runs unit tests with code coverage
 3. **🔗 Integration Tests** - Runs comprehensive integration tests
 4. **✅ Build Verification** - Final build verification with artifacts (30-day retention)
-5. **💬 PR Feedback** - Updates PR with deployment information
+5. **💬 PR Feedback** - Updates PR with pipeline status information
 6. **⏸️ Docker Publish Approval** - **Manual approval gate** (only on merge)
-7. **🐳 Docker Build & Publish** - Builds and publishes with versioning (only after approval)
+7. **🐳 Docker Build & Publish** - Builds and publishes with versioning for backup purposes (only after approval)
 
 **Docker Tags**: `latest`, `v{build-number}`, `{commit-sha}`, `prod-{timestamp}`
 
-**Focus**: Maximum safety with manual control over Docker publishing
+**Focus**: Maximum safety with manual control over Docker image publishing
+
+> **Note**: Docker images are published to GitHub Container Registry as backup artifacts. Actual production deployments are managed by the **MyFinance-Infrastructure** repository.
 
 ---
 
@@ -102,8 +106,9 @@ git push -u origin promote/dev-to-staging
 
 # Create PR to staging
 # 1. PR triggers: tests + integration tests + security scans (NO Docker build)
-# 2. Review and merge → Full pipeline with Docker build approval and staging deployment
-# 3. Approve Docker publish in GitHub Actions UI
+# 2. Review and merge → Full pipeline with Docker build approval
+# 3. Approve Docker publish in GitHub Actions UI to create backup images
+# 4. Deployment is handled separately by MyFinance-Infrastructure pipeline
 ```
 
 ### Production Release (Optimized)
@@ -121,8 +126,9 @@ git push -u origin promote/staging-to-prod
 
 # Create PR to production
 # 1. PR triggers: comprehensive checks (NO Docker build)
-# 2. Review and merge → Full pipeline with Docker build approval, deployment, and release
-# 3. Approve Docker publish in GitHub Actions UI
+# 2. Review and merge → Full pipeline with Docker build approval
+# 3. Approve Docker publish in GitHub Actions UI to create versioned backup images
+# 4. Deployment is handled separately by MyFinance-Infrastructure pipeline
 ```
 
 ### Emergency Hotfix (Optimized)
@@ -138,7 +144,9 @@ git push -u origin hotfix/critical-fix
 
 # Create PR to production
 # 1. PR triggers: fast validation (NO Docker build)
-# 2. Expedited review and merge → Immediate Docker build approval and deployment
+# 2. Expedited review and merge → Docker build approval
+# 3. Approve Docker publish to create backup images
+# 4. Emergency deployment is handled by MyFinance-Infrastructure pipeline
 ```
 
 ## 📊 Monitoring and Pipeline Behavior
@@ -147,15 +155,19 @@ git push -u origin hotfix/critical-fix
 ```
 Pull Request → [Tests + Build Verification + PR Comment]
      ↓ (on merge)
-Push to Branch → [Full Pipeline: Tests + Build + Docker Approval + Docker Build + Deploy]
+Push to Branch → [Full Pipeline: Tests + Build + Docker Approval + Docker Build + Publish Backup Images]
+     ↓ (separate process)
+Deployment → [Handled by MyFinance-Infrastructure Pipeline]
 ```
 
 ### Docker Image Management
 - **Registry**: GitHub Container Registry (ghcr.io)
 - **Public Images**: Automatically configured for public access
+- **Purpose**: Backup and versioning of application builds
 - **Image Tags**:
   - Staging: `ghcr.io/owner/myfinance-server:staging-latest`, `staging-{commit-sha}`
   - Production: `ghcr.io/owner/myfinance-server:latest`, `prod-{commit-sha}`, `v{build-number}`, `prod-{timestamp}`
+- **Deployment**: Images are pulled and deployed by the MyFinance-Infrastructure pipeline
 
 ### Build Artifacts Storage
 - **Development**: 7 days retention
@@ -165,12 +177,13 @@ Push to Branch → [Full Pipeline: Tests + Build + Docker Approval + Docker Buil
 ### Pipeline Status and Logs
 - Monitor in GitHub `Actions` tab
 - Each job shows detailed execution logs
-- Failed pipelines prevent deployment
+- Failed pipelines prevent Docker image publishing
 - PR comments provide merge preview
+- Deployments are tracked separately in the MyFinance-Infrastructure repository
 
 ### Rollback Strategy
 - **Docker Images**: Tagged with commit SHA for easy rollback
-- **Manual Rollback**: Deploy previous known-good image using tags
+- **Manual Rollback**: Deploy previous known-good image using the MyFinance-Infrastructure pipeline with specific image tags
 
 ## 🛠️ Customization and Advanced Features
 
@@ -181,14 +194,19 @@ The workflows use a **separate build and publish strategy**:
 3. **Integration Tests**: Runs integration tests separately (staging/production only)
 4. **Build Verification**: Final build verification and artifact creation
 5. **Docker Approval**: Manual approval gate
-6. **Docker Publish**: Builds Docker image and pushes to registry
+6. **Docker Publish**: Builds Docker image and pushes to registry as backup
 
-This provides better visibility, conditional publishing, and easier debugging.
+> **Important**: These pipelines do **not** handle deployment. The MyFinance-Infrastructure repository manages all deployments using the published Docker images.
+
+This provides better visibility, conditional publishing, easier debugging, and separation of concerns between build/test and deployment.
 
 ### Conditional Logic
 ```yaml
 # Docker jobs only run on merged PRs, not during PR validation
 if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+
+# Note: No deployment logic in these pipelines
+# Deployments are handled by MyFinance-Infrastructure repository
 ```
 
 ### Adding New Pipeline Steps
@@ -318,7 +336,8 @@ git push -u origin promote/dev-to-staging
 # Create PR to staging
 # After merge, pipeline runs and waits at Docker Publish Approval stage
 # Go to Actions tab → Click "Review deployments" → Approve
-# Docker image is built and published to GHCR
+# Docker image is built and published to GHCR as a backup
+# Deployment happens separately via MyFinance-Infrastructure pipeline
 ```
 
 ### Production Release
@@ -336,7 +355,8 @@ git push -u origin promote/staging-to-prod
 # Create PR to production
 # After merge, pipeline runs and waits at Docker Publish Approval stage
 # Go to Actions tab → Click "Review deployments" → Approve
-# Docker image is built, published, and tagged with multiple versions
+# Docker image is built, published, and tagged with multiple versions for backup
+# Deployment happens separately via MyFinance-Infrastructure pipeline
 ```
 
 ## ⏸️ Manual Docker Publish Approval
@@ -348,7 +368,8 @@ git push -u origin promote/staging-to-prod
 3. **Approval Gate**: Pipeline pauses at "Docker Publish Approval" stage
 4. **Review Button**: In GitHub Actions UI, you'll see a "Review deployments" button
 5. **Approve**: Click button, review, and approve to proceed
-6. **Docker Build**: After approval, Docker image is built and published
+6. **Docker Build**: After approval, Docker image is built and published as backup
+7. **Deployment**: Handled separately by the MyFinance-Infrastructure pipeline
 
 ### Approval Process
 
@@ -373,17 +394,20 @@ git push -u origin promote/staging-to-prod
 ### Resource Efficiency
 - **No unnecessary Docker builds** during PR validation
 - **Manual control** over when Docker images are published
-- **Cleaner registry** with only approved, production-ready images
+- **Cleaner registry** with only approved, production-ready backup images
+- **Separation of concerns**: Build/test in this repository, deployment in MyFinance-Infrastructure
 
 ### Security & Control
 - **Explicit approval required** before publishing Docker images
 - **Audit trail** of who approved each Docker publish
 - **Prevent accidental publishes** from untested code
+- **Deployment control**: All deployments managed separately via MyFinance-Infrastructure pipeline
 
 ### Developer Experience
 - **Fast PR feedback** (2-3 minutes) without waiting for Docker builds
-- **Clear separation** between validation and deployment
+- **Clear separation** between validation and image publishing
 - **Predictable workflow** - know when Docker builds will occur
+- **Deployment visibility**: Track deployments in the dedicated MyFinance-Infrastructure repository
 
 ## 📈 Monitoring
 
@@ -444,31 +468,34 @@ git push -u origin promote/staging-to-prod
 - Connection string: `Data Source=/data/finance.db`
 - Migrations: Auto-applied on application startup
 
-### Infrastructure Repository
-- Separate MyFinance-Infrastructure repository contains:
+### Deployment and Infrastructure
+- **MyFinance-Infrastructure Repository**: Contains deployment configurations
   - Docker Compose configurations
   - Environment-specific settings
-  - Deployment scripts
+  - Deployment scripts and orchestration
   - Blue-green deployment setup (future)
+- **Deployment Process**: All deployments are managed through the MyFinance-Infrastructure pipeline
+- **Docker Images**: This pipeline publishes images to GHCR; MyFinance-Infrastructure pulls and deploys them
 
 ## 🎯 Current Status
 
 ### ✅ Implemented
-- Multi-stage pipeline architecture
+- Multi-stage pipeline architecture (build, test, Docker publish)
 - Manual Docker publish approval gates
 - Separate unit and integration test jobs
-- GitHub Container Registry integration
+- GitHub Container Registry integration for backup images
 - Comprehensive PR feedback with update/create logic
 - Clickable links to Docker images and commits
 - Code coverage integration with Codecov
+- **Separation of concerns**: Build/test in this repo, deployments in MyFinance-Infrastructure
 
-### 📄 Available Enhancements
+### 📄 Deployment Features (in MyFinance-Infrastructure Repository)
 - Health check endpoints after deployment
-- Blue-green deployments (infrastructure repository)
+- Blue-green deployments
 - Advanced monitoring and alerting
 - Database migration verification
-- Multi-region deployments
+- Multi-region deployments (future)
 
 ---
 
-This CI/CD setup provides a solid foundation for reliable, controlled software delivery with explicit approval gates for critical deployment stages.
+**Pipeline Scope Summary**: These pipelines handle **build**, **test**, and **Docker image publishing** (for backup purposes). All actual deployments are managed by the **MyFinance-Infrastructure** repository pipeline, which pulls the published Docker images and orchestrates deployments to staging and production environments.
